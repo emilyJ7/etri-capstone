@@ -21,11 +21,23 @@ OpenAlex를 활용하여 자신의 연구 분야에 특화된 MCP Server를 설�
 
 이 저장소에는 Python으로 실행하는 가장 기본적인 MCP Server가 포함되어 있다.
 
-참고 Tool은 입력받은 논문명을 OpenAlex에서 검색하고, 검색된 논문의 제목·발행 연도·저자·DOI·OpenAlex 주소를 반환한다. 이 코드는 MCP Server의 선언, Tool 등록, OpenAlex 요청, `stdio` 구동 방식을 확인하기 위한 출발점이다.
+참고 Tool은 입력받은 논문명을 OpenAlex에서 검색하고, 검색된 논문의 제목·발행 연도·저자·DOI·OpenAlex 주소를 반환한다. 이 코드는 MCP Server의 선언, Tool 등록, OpenAlex 요청과 `stdio` 구동 구조를 확인하기 위한 참고 구현이다.
 
 ## 준비
 
 Python 3.10 이상이 필요하다.
+
+먼저 Python 버전을 확인한다. 3.10보다 낮다면 설치된 Python 3.10 이상의 실행 명령을 사용한다.
+
+```bash
+python3 --version
+```
+
+Windows PowerShell:
+
+```powershell
+python --version
+```
 
 macOS와 Linux:
 
@@ -39,14 +51,19 @@ Windows PowerShell:
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 ## MCP Server 실행
 
 ```bash
 python server.py
+```
+
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe server.py
 ```
 
 MCP Host는 위 명령으로 Server를 실행하고 표준 입력과 표준 출력을 통해 통신한다.
