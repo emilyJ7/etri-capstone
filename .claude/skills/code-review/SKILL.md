@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review current changes and report only verified problems that require correction. Use when the user invokes /code-review or asks whether an MCP, OpenAlex, SQLite, documentation, or integration change is safe to keep.
+description: Review current changes and report only verified problems that require correction. Use when the user invokes /code-review or asks whether code changes are correct, safe, and maintainable.
 ---
 
 # Code Review
@@ -26,28 +26,23 @@ Review engineering decisions strictly, but report only actionable defects suppor
 
 ### Correctness and contracts
 
-- MCP Tool names, descriptions, inputs, outputs, and actual function behavior agree.
-- OpenAlex fields are transformed without inventing or silently dropping required sources.
-- SQLite writes, relationships, retrieval, and restart persistence preserve data correctly.
+- End-to-end behavior matches the stated requirements and public contracts.
+- Inputs, outputs, serialization, persistence, and consumers remain consistent.
+- Null, optional, state, and error paths preserve the intended meaning.
 - Error paths do not become false success, empty data, or misleading fallback results.
 
 ### Security and data integrity
 
-- API keys and credentials are not committed or exposed in Tool results.
-- Stored reports retain the paper identifiers and sources needed to verify claims.
-- Updates do not overwrite or detach existing papers and reports unintentionally.
+- Authentication and authorization are enforced at the actual read and mutation boundaries.
+- Secrets, credentials, and unrelated user data are not committed or exposed.
+- Updates do not cause silent data loss, duplicate execution, or unintended cross-user access.
 
 ### Architecture and maintainability
 
-- MCP transport, OpenAlex integration, domain logic, and persistence have clear ownership.
+- UI, domain logic, transport, persistence, and external integrations have clear ownership.
 - Shared validation and transformation rules are not duplicated in ways that can drift.
 - Added abstraction has a demonstrated current use and does not expand the task without value.
 - Names, structure, comments, and documentation match the executed behavior.
-
-### Cross-platform operation
-
-- Documented commands match Python 3.10+ on macOS, Linux, and Windows PowerShell.
-- Paths, encodings, and process launch assumptions do not break `stdio` MCP operation.
 
 ## Findings
 
