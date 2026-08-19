@@ -1,31 +1,107 @@
 .app {
-  max-width: 840px;
+  max-width: 880px;
   margin: 0 auto;
-  padding: 1.5rem 1rem 4rem;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  color: #1a1a1a;
+  padding: 0 1.25rem 4rem;
 }
+
+/* ---------- Header ---------- */
 
 .nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #e2e2e2;
-  padding-bottom: 1rem;
-  margin-bottom: 1.5rem;
+  padding: 1.1rem 0;
+  margin-bottom: 2rem;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
 }
 
-.nav h1 {
-  font-size: 1.1rem;
-  margin: 0;
-}
-
-.nav nav a {
-  margin-left: 1rem;
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   text-decoration: none;
-  color: #2a5db0;
-  font-weight: 500;
 }
+
+.brand-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  flex-shrink: 0;
+}
+
+.brand h1 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.nav-links {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.nav-links a {
+  position: relative;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--muted);
+  padding-bottom: 4px;
+  transition: color 0.2s ease;
+}
+
+.nav-links a::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.25s ease;
+}
+
+.nav-links a:hover,
+.nav-links a.active {
+  color: var(--text);
+}
+
+.nav-links a:hover::after,
+.nav-links a.active::after {
+  transform: scaleX(1);
+}
+
+/* ---------- Page transition ---------- */
+
+.page {
+  animation: fade-up 0.35s ease both;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---------- Cards ---------- */
 
 .card-list {
   list-style: none;
@@ -33,57 +109,264 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.85rem;
 }
 
 .card {
-  border: 1px solid #e2e2e2;
-  border-radius: 8px;
-  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem;
+  box-shadow: var(--shadow);
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+  animation: fade-up 0.45s ease both;
+}
+
+.card-list .card {
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+.card-link {
+  display: block;
+  text-decoration: none;
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-hover);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
 }
 
 .card h3,
 .card h4 {
-  margin: 0 0 0.35rem;
-}
-
-.card a {
-  color: #1a1a1a;
-  text-decoration: none;
+  margin: 0 0 0.4rem;
+  color: var(--text);
 }
 
 .muted {
-  color: #555;
-  margin: 0.2rem 0;
+  color: var(--muted);
+  margin: 0.25rem 0;
 }
 
 .meta {
-  color: #888;
-  font-size: 0.85rem;
-  margin: 0.2rem 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: 0.3rem 0;
 }
 
 .error {
-  color: #b00020;
+  color: #e11d48;
+  font-weight: 600;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  text-decoration: none;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.back-link:hover {
+  color: var(--accent);
+  transform: translateX(-2px);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.pill:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--accent) 22%, var(--accent-soft));
+}
+
+/* ---------- Report detail ---------- */
+
+.report-header h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.5rem;
 }
 
 .markdown-body {
-  border: 1px solid #e2e2e2;
-  border-radius: 8px;
-  padding: 1rem 1.25rem;
-  margin: 1rem 0 2rem;
-  line-height: 1.6;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem 1.75rem;
+  margin: 1.25rem 0 2rem;
+  line-height: 1.7;
   overflow-x: auto;
+  box-shadow: var(--shadow);
+  animation: fade-up 0.45s ease both;
+  animation-delay: 80ms;
+}
+
+/* 첫 h1은 위쪽 report-header의 제목과 중복되므로 숨긴다 */
+.markdown-body > h1:first-child {
+  display: none;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.markdown-body h2 {
+  font-size: 1.2rem;
+  margin: 2.2rem 0 0.9rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.markdown-body h2:first-child {
+  margin-top: 0;
+}
+
+.markdown-body h3 {
+  font-size: 1.02rem;
+  margin: 1.6rem 0 0.6rem;
+  padding-left: 0.7rem;
+  border-left: 3px solid var(--accent);
+}
+
+.markdown-body h4 {
+  font-size: 0.95rem;
+  margin: 1.2rem 0 0.4rem;
+  color: var(--accent);
+}
+
+.markdown-body p {
+  margin: 0.7rem 0;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0.6rem 0;
+  padding-left: 1.4rem;
+}
+
+.markdown-body li {
+  margin: 0.35rem 0;
+}
+
+.markdown-body li::marker {
+  color: var(--accent);
+}
+
+.markdown-body strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.markdown-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.2s ease;
+}
+
+.markdown-body a:hover {
+  text-decoration-color: currentColor;
+}
+
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.75rem 0;
+}
+
+.markdown-body blockquote {
+  margin: 1rem 0;
+  padding: 0.6rem 1rem;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 8px 8px 0;
+  color: var(--muted);
 }
 
 .markdown-body table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
+  margin: 1rem 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 .markdown-body th,
 .markdown-body td {
-  border: 1px solid #ddd;
-  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 0.55rem 0.8rem;
   text-align: left;
+  font-size: 0.92rem;
+}
+
+.markdown-body th:last-child,
+.markdown-body td:last-child {
+  border-right: none;
+}
+
+.markdown-body tr:last-child td {
+  border-bottom: none;
+}
+
+.markdown-body th {
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+
+.markdown-body tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--border) 25%, transparent);
+}
+
+.markdown-body code {
+  background: var(--accent-soft);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+/* ---------- Loading / empty states ---------- */
+
+.state {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--muted);
+  padding: 2rem 0;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
