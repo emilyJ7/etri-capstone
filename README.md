@@ -24,11 +24,11 @@ MCP Server를 직접 구현하여 LLM이 논문을 찾고 분석·비교하며, 
 → 저장된 리포트 목록 조회·불러오기·삭제
 ```
 
-## 참고 구현
+## 구현
 
-이 저장소에는 Python으로 실행하는 가장 기본적인 MCP Server가 포함되어 있다.
-
-참고 Tool은 입력받은 논문명을 OpenAlex에서 검색하고, 검색된 논문의 제목·발행 연도·저자·DOI·OpenAlex 주소를 반환한다. 이 코드는 MCP Server의 선언, Tool 등록, OpenAlex 요청과 `stdio` 구동 구조를 확인하기 위한 참고 구현이다.
+`SPEC.md`에 정리된 요구사항에 따라, OpenAlex 논문 검색부터 리포트 저장·조회·삭제까지 지원하는 MCP
+Server가 `server.py`에 구현되어 있다. 논문 비교·분석과 리포트 본문 작성은 Tool을 호출하는 호스트
+LLM이 수행하며, 서버는 검색과 SQLite 영속화만 담당한다.
 
 ## 준비
 
@@ -78,12 +78,29 @@ MCP Host는 위 명령으로 Server를 실행하고 표준 입력과 표준 출�
 ## 제공 Tool
 
 ```text
-search_papers_by_title
+search_papers
+save_report
+list_reports
+list_papers
+get_report
+delete_report
 ```
 
-입력한 논문명을 OpenAlex에서 검색하고 관련 논문 목록을 반환한다.
+- `search_papers`: 키워드/주제로 OpenAlex를 검색한다. 발행 연도 범위, concept(분야) 필터, 정렬
+  (관련도순/피인용수순)을 지원한다.
+- `save_report`: 리포트 본문(제목, 연구 질문, 근거·출처가 담긴 내용)과 참조 논문 목록을 함께 저장한다.
+- `list_reports`: 저장된 리포트 목록을 최신순으로 조회한다.
+- `list_papers`: 리포트 전체를 불러오지 않고 저장된 참고 논문만 조회한다(`report_id`로 특정 리포트만
+  필터링 가능).
+- `get_report`: 저장된 리포트 하나를 참조 논문 목록과 함께 불러온다.
+- `delete_report`: 저장된 리포트를 삭제한다(참조 논문 정보도 함께 삭제된다).
 
 OpenAlex API 키가 있다면 실행 환경의 `OPENALEX_API_KEY` 값으로 전달할 수 있다. 기본적인 검색은 API 키 없이도 실행할 수 있다.
+
+## 데이터 저장
+
+리포트와 참조 논문은 저장소 루트의 `reports.db`(SQLite)에 보존되며, 서버를 재시작해도 유지된다.
+이 파일은 `.gitignore`에 의해 커밋되지 않는다.
 
 ## 프로젝트 스킬
 
