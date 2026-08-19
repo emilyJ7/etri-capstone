@@ -11,8 +11,6 @@ export default function ReportDetail() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    setReport(null);
-    setError(null);
     fetchReport(reportId).then(setReport).catch((err) => setError(err.message));
   }, [reportId]);
 
