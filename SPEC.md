@@ -44,8 +44,8 @@ LLM(호스트)이 MCP Tool을 통해 OpenAlex에서 논문을 찾고, 직접 비
 
 | Tool | 입력 | 출력 |
 |---|---|---|
-| `search_papers` | `query` (str), `year_from?` (int), `year_to?` (int), `concept?` (str), `limit?` (int, 기본 5, 최대 10), `sort?` ("relevance" \| "citations", 기본 relevance) | 논문 목록: `openalex_id, title, publication_year, authors, doi, landing_page_url, cited_by_count` |
-| `save_report` | `title` (str), `research_question` (str), `content` (str, markdown), `papers` (list of `{openalex_id, title, publication_year, authors, doi, landing_page_url, cited_by_count}`) | `report_id` |
+| `search_papers` | `query` (str), `year_from?` (int), `year_to?` (int), `concept?` (str), `limit?` (int, 기본 5, 최대 10), `sort?` ("relevance" \| "citations", 기본 relevance) | 논문 목록: `openalex_id, title, publication_year, authors, doi, landing_page_url, cited_by_count, abstract` |
+| `save_report` | `title` (str), `research_question` (str), `content` (str, markdown), `papers` (list of `{openalex_id, title, publication_year, authors, doi, landing_page_url, cited_by_count, abstract}`) | `report_id` |
 | `list_reports` | (없음) | 리포트 목록: `id, title, research_question, created_at, paper_count` |
 | `list_papers` | `report_id?` (int) | 참조 논문 목록 (리포트 전체를 불러오지 않고 조회). `report_id`를 생략하면 저장된 모든 리포트의 논문을 반환하며, 각 항목에 자신의 `id`, `report_id`, `report_title`을 포함한다 |
 | `get_report` | `report_id` (int) | `id, title, research_question, content, created_at, updated_at, papers[]` |
@@ -70,6 +70,7 @@ LLM(호스트)이 MCP Tool을 통해 OpenAlex에서 논문을 찾고, 직접 비
   - `doi`
   - `landing_page_url`
   - `cited_by_count`
+  - `abstract` (OpenAlex `abstract_inverted_index`를 복원한 텍스트, 없을 수 있음)
 
 리포트를 삭제하면 연결된 `report_papers` 행도 함께 삭제된다 (CASCADE). 논문은 리포트 간에 공유되지 않는다.
 
@@ -95,7 +96,7 @@ DB 파일은 저장소 루트에 생성하며, `.gitignore`에 이미 `*.db`/`*.
 
 ## Constraints
 
-- Python 3.10 이상, 기존 `mcp==2.0.0` 패키지 유지
+- Python 3.10 이상, 기존 `mcp==2.0.0` 패키지 유지, `.env`의 `OPENALEX_API_KEY`를 `python-dotenv`로 로드
 - 기존 코드 스타일(구조화된 출력, 예외 대신 error dict 반환) 유지
 - 표준 라이브러리 `sqlite3` 사용 (추가 ORM 의존성 없음)
 

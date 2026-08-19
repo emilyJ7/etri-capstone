@@ -12,8 +12,10 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from dotenv import load_dotenv
 from mcp.server import MCPServer
 
+load_dotenv()
 
 OPENALEX_WORKS_URL = "https://api.openalex.org/works"
 DEFAULT_RESULT_LIMIT = 5
@@ -47,6 +49,18 @@ def _author_names(authorships: list[dict[str, Any]]) -> list[str]:
     return names
 
 
+def _reconstruct_abstract(inverted_index: dict[str, list[int]] | None) -> str | None:
+    if not inverted_index:
+        return None
+    positions: dict[int, str] = {}
+    for word, indices in inverted_index.items():
+        for index in indices:
+            positions[index] = word
+    if not positions:
+        return None
+    return " ".join(positions[i] for i in range(max(positions) + 1) if i in positions)
+
+
 def _build_filter(year_from: int | None, year_to: int | None, concept: str | None) -> str | None:
     clauses: list[str] = []
     if year_from is not None and year_to is not None:
@@ -72,7 +86,8 @@ def _search_openalex(
         "search": query,
         "per_page": limit,
         "select": (
-            "id,display_name,publication_year,doi,authorships,primary_location,cited_by_count"
+            "id,display_name,publication_year,doi,authorships,primary_location,"
+            "cited_by_count,abstract_inverted_index"
         ),
     }
 
@@ -119,6 +134,7 @@ def _search_openalex(
                 "doi": work.get("doi"),
                 "landing_page_url": primary_location.get("landing_page_url"),
                 "cited_by_count": work.get("cited_by_count"),
+                "abstract": _reconstruct_abstract(work.get("abstract_inverted_index")),
             }
         )
 
@@ -215,7 +231,8 @@ def _init_db() -> None:
                 authors TEXT,
                 doi TEXT,
                 landing_page_url TEXT,
-                cited_by_count INTEGER
+                cited_by_count INTEGER,
+                abstract TEXT
             )
             """
         )
@@ -234,6 +251,7 @@ def _row_to_paper(row: sqlite3.Row) -> dict[str, Any]:
         "doi": row["doi"],
         "landing_page_url": row["landing_page_url"],
         "cited_by_count": row["cited_by_count"],
+        "abstract": row["abstract"],
     }
 
 
@@ -251,7 +269,7 @@ def save_report(
         research_question: 이 리포트가 답하는 연구 질문.
         content: 근거와 출처가 포함된 리포트 본문(마크다운 텍스트).
         papers: 참조 논문 목록. 각 항목은 openalex_id, title, publication_year,
-            authors, doi, landing_page_url, cited_by_count 필드를 담을 수 있다.
+            authors, doi, landing_page_url, cited_by_count, abstract 필드를 담을 수 있다.
     """
     normalized_title = title.strip()
     normalized_question = research_question.strip()
@@ -282,9 +300,9 @@ def save_report(
                 """
                 INSERT INTO report_papers (
                     report_id, openalex_id, title, publication_year, authors, doi,
-                    landing_page_url, cited_by_count
+                    landing_page_url, cited_by_count, abstract
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -296,6 +314,7 @@ def save_report(
                         paper.get("doi"),
                         paper.get("landing_page_url"),
                         paper.get("cited_by_count"),
+                        paper.get("abstract"),
                     )
                     for paper in papers
                 ],

@@ -61,6 +61,17 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
+## OpenAlex API 키 (선택)
+
+기본적인 검색은 API 키 없이도 동작하지만, 요청량이 많거나 크레딧 제한에 걸리면 키가 필요할 수 있다.
+저장소 루트에 `.env` 파일을 만들고 아래처럼 채우면 `server.py`가 시작 시 자동으로 읽는다.
+
+```text
+OPENALEX_API_KEY=여기에_키_입력
+```
+
+`.env`는 `.gitignore`에 등록되어 있어 커밋되지 않는다.
+
 ## MCP Server 실행
 
 ```bash
@@ -87,7 +98,7 @@ delete_report
 ```
 
 - `search_papers`: 키워드/주제로 OpenAlex를 검색한다. 발행 연도 범위, concept(분야) 필터, 정렬
-  (관련도순/피인용수순)을 지원한다.
+  (관련도순/피인용수순)을 지원하며, 결과에 초록(abstract, 확보 가능한 경우)을 포함한다.
 - `save_report`: 리포트 본문(제목, 연구 질문, 근거·출처가 담긴 내용)과 참조 논문 목록을 함께 저장한다.
 - `list_reports`: 저장된 리포트 목록을 최신순으로 조회한다.
 - `list_papers`: 리포트 전체를 불러오지 않고 저장된 참고 논문만 조회한다(`report_id`로 특정 리포트만
