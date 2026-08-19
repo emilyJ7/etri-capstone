@@ -6,5 +6,6 @@ const LABELS = {
 };
 
 export default function SourceBadge({ source }) {
-  return <span className="badge">{LABELS[source] ?? LABELS.openalex}</span>;
+  const label = LABELS[source] ?? "출처 미상";
+  return <span className={`badge${source in LABELS ? "" : " badge-unknown"}`}>{label}</span>;
 }

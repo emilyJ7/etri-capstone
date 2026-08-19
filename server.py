@@ -31,8 +31,7 @@ YEAR_PATTERN = re.compile(r"(19|20)\d{2}")
 DEFAULT_RESULT_LIMIT = 5
 MAX_RESULT_LIMIT = 10
 VALID_SORTS = ("relevance", "citations")
-VALID_ARXIV_SORTS = ("relevance", "date")
-VALID_SCHOLAR_SORTS = ("relevance", "date")
+VALID_DATE_SORTS = ("relevance", "date")
 
 DB_PATH = Path(__file__).resolve().parent / "reports.db"
 
@@ -158,6 +157,52 @@ def _search_openalex(
     }
 
 
+def _validate_search_args(
+    query: str,
+    sort: str,
+    valid_sorts: tuple[str, ...],
+    year_from: int | None = None,
+    year_to: int | None = None,
+) -> tuple[dict[str, Any] | None, str]:
+    """Shared input validation for the four search_* tools.
+
+    Returns (error_dict, normalized_query). error_dict is None when the input is
+    valid; callers should return it as-is otherwise.
+    """
+    normalized_query = query.strip()
+    if not normalized_query:
+        return {"query": query, "error": "검색할 키워드를 입력해 주세요.", "papers": []}, normalized_query
+
+    if sort not in valid_sorts:
+        return (
+            {"query": query, "error": f"sort는 {valid_sorts} 중 하나여야 합니다.", "papers": []},
+            normalized_query,
+        )
+
+    if year_from is not None and year_to is not None and year_from > year_to:
+        return (
+            {"query": query, "error": "year_from은 year_to보다 클 수 없습니다.", "papers": []},
+            normalized_query,
+        )
+
+    return None, normalized_query
+
+
+def _clamp_limit(limit: int) -> int:
+    return max(1, min(limit, MAX_RESULT_LIMIT))
+
+
+def _normalize_doi(doi: str | None) -> str | None:
+    """Turn a bare DOI (e.g. Semantic Scholar's `externalIds.DOI`) into a full,
+    directly-linkable https://doi.org/... URL. Already-full URLs pass through
+    unchanged, so this is safe to apply to any source's `doi` field."""
+    if not doi:
+        return None
+    if doi.startswith("http://") or doi.startswith("https://"):
+        return doi
+    return f"https://doi.org/{doi}"
+
+
 @server.tool(structured_output=True)
 def search_papers(
     query: str,
@@ -177,25 +222,11 @@ def search_papers(
         limit: 반환할 논문 수. 기본값 5, 최대 10.
         sort: "relevance"(기본, 검색어 관련도순) 또는 "citations"(피인용수순).
     """
-    normalized_query = query.strip()
-    if not normalized_query:
-        return {"query": query, "error": "검색할 키워드를 입력해 주세요.", "papers": []}
+    error, normalized_query = _validate_search_args(query, sort, VALID_SORTS, year_from, year_to)
+    if error:
+        return error
 
-    if sort not in VALID_SORTS:
-        return {
-            "query": query,
-            "error": f"sort는 {VALID_SORTS} 중 하나여야 합니다.",
-            "papers": [],
-        }
-
-    if year_from is not None and year_to is not None and year_from > year_to:
-        return {
-            "query": query,
-            "error": "year_from은 year_to보다 클 수 없습니다.",
-            "papers": [],
-        }
-
-    safe_limit = max(1, min(limit, MAX_RESULT_LIMIT))
+    safe_limit = _clamp_limit(limit)
     return _search_openalex(normalized_query, year_from, year_to, concept, safe_limit, sort)
 
 
@@ -284,18 +315,11 @@ def search_arxiv(
         sort: "relevance"(기본, 관련도순) 또는 "date"(최신 제출일순).
         category: arXiv 분류 코드로 제한(예: "cs.CL", "cs.AI"). 지정하지 않으면 전체 분류에서 검색.
     """
-    normalized_query = query.strip()
-    if not normalized_query:
-        return {"query": query, "error": "검색할 키워드를 입력해 주세요.", "papers": []}
+    error, normalized_query = _validate_search_args(query, sort, VALID_DATE_SORTS)
+    if error:
+        return error
 
-    if sort not in VALID_ARXIV_SORTS:
-        return {
-            "query": query,
-            "error": f"sort는 {VALID_ARXIV_SORTS} 중 하나여야 합니다.",
-            "papers": [],
-        }
-
-    safe_limit = max(1, min(limit, MAX_RESULT_LIMIT))
+    safe_limit = _clamp_limit(limit)
     return _search_arxiv(normalized_query, safe_limit, sort, category)
 
 
@@ -369,7 +393,7 @@ def _search_semantic_scholar(
                 "title": item.get("title"),
                 "publication_year": item.get("year"),
                 "authors": [a.get("name") for a in (item.get("authors") or []) if a.get("name")],
-                "doi": external_ids.get("DOI"),
+                "doi": _normalize_doi(external_ids.get("DOI")),
                 "landing_page_url": item.get("url"),
                 "cited_by_count": item.get("citationCount"),
                 "abstract": item.get("abstract"),
@@ -403,25 +427,11 @@ def search_semantic_scholar(
         limit: 반환할 논문 수. 기본값 5, 최대 10.
         sort: "relevance"(기본) 또는 "citations"(피인용수순).
     """
-    normalized_query = query.strip()
-    if not normalized_query:
-        return {"query": query, "error": "검색할 키워드를 입력해 주세요.", "papers": []}
+    error, normalized_query = _validate_search_args(query, sort, VALID_SORTS, year_from, year_to)
+    if error:
+        return error
 
-    if sort not in VALID_SORTS:
-        return {
-            "query": query,
-            "error": f"sort는 {VALID_SORTS} 중 하나여야 합니다.",
-            "papers": [],
-        }
-
-    if year_from is not None and year_to is not None and year_from > year_to:
-        return {
-            "query": query,
-            "error": "year_from은 year_to보다 클 수 없습니다.",
-            "papers": [],
-        }
-
-    safe_limit = max(1, min(limit, MAX_RESULT_LIMIT))
+    safe_limit = _clamp_limit(limit)
     return _search_semantic_scholar(normalized_query, year_from, year_to, safe_limit, sort)
 
 
@@ -469,8 +479,11 @@ def _search_google_scholar(
 
     period = _current_period()
     with _db() as conn:
-        used = _get_monthly_usage(conn, GOOGLE_SCHOLAR_SOURCE_KEY, period)
-        if used >= GOOGLE_SCHOLAR_MONTHLY_LIMIT:
+        reserved = _try_reserve_monthly_usage(
+            conn, GOOGLE_SCHOLAR_SOURCE_KEY, period, GOOGLE_SCHOLAR_MONTHLY_LIMIT
+        )
+        if reserved is None:
+            used = _get_monthly_usage(conn, GOOGLE_SCHOLAR_SOURCE_KEY, period)
             return {
                 "query": query,
                 "error": (
@@ -480,7 +493,13 @@ def _search_google_scholar(
                 ),
                 "papers": [],
             }
-        _increment_monthly_usage(conn, GOOGLE_SCHOLAR_SOURCE_KEY, period)
+
+    def _release_reservation() -> None:
+        # The slot was reserved before the request; give it back since the call
+        # never produced a usable result, so a failed/erroring call doesn't
+        # permanently cost a slot of the monthly quota.
+        with _db() as release_conn:
+            _release_monthly_usage(release_conn, GOOGLE_SCHOLAR_SOURCE_KEY, period)
 
     params: dict[str, Any] = {
         "engine": "google_scholar",
@@ -505,14 +524,26 @@ def _search_google_scholar(
         with urlopen(request, timeout=20) as response:
             payload = json.load(response)
     except HTTPError as error:
+        _release_reservation()
         return {"query": query, "error": f"SerpApi가 HTTP {error.code} 응답을 반환했습니다.", "papers": []}
     except URLError as error:
+        _release_reservation()
         return {"query": query, "error": f"SerpApi에 연결하지 못했습니다: {error.reason}", "papers": []}
+    except Exception:
+        # Any other failure (e.g. a non-JSON/truncated response) still means the
+        # call produced nothing usable, so the reservation must be given back too.
+        _release_reservation()
+        raise
 
     if payload.get("error"):
+        _release_reservation()
         return {"query": query, "error": f"SerpApi 오류: {payload['error']}", "papers": []}
 
-    papers = [_parse_scholar_result(item) for item in payload.get("organic_results", [])]
+    try:
+        papers = [_parse_scholar_result(item) for item in payload.get("organic_results", [])]
+    except Exception:
+        _release_reservation()
+        raise
 
     return {"query": query, "count": len(papers), "papers": papers}
 
@@ -531,8 +562,10 @@ def search_google_scholar(
     SERPAPI_API_KEY(.env)가 있어야 동작한다. abstract 필드는 전체 초록이 아니라 검색 결과
     스니펫(2~3줄)이다 — Google Scholar 검색 결과 자체가 전체 초록을 제공하지 않기 때문이다.
 
-    무료 요금제 한도를 넘기지 않도록, 이번 달 호출 횟수를 SQLite에 기록해 두고 월
+    무료 요금제 한도를 넘기지 않도록, 이번 달 호출 횟수를 SQLite에 원자적으로 기록해 두고 월
     SERPAPI_MONTHLY_LIMIT(기본 250)회를 넘으면 SerpApi를 호출하지 않고 바로 에러를 반환한다.
+    호출이 예약된 뒤 실제 SerpApi 요청이 실패(HTTP 오류, 연결 실패, SerpApi 자체 오류 응답)하면
+    예약을 반환해 실패한 호출이 한도를 갉아먹지 않게 한다.
 
     Args:
         query: 검색할 키워드 또는 주제어.
@@ -541,25 +574,11 @@ def search_google_scholar(
         limit: 반환할 논문 수. 기본값 5, 최대 10.
         sort: "relevance"(기본) 또는 "date"(최신순).
     """
-    normalized_query = query.strip()
-    if not normalized_query:
-        return {"query": query, "error": "검색할 키워드를 입력해 주세요.", "papers": []}
+    error, normalized_query = _validate_search_args(query, sort, VALID_DATE_SORTS, year_from, year_to)
+    if error:
+        return error
 
-    if sort not in VALID_SCHOLAR_SORTS:
-        return {
-            "query": query,
-            "error": f"sort는 {VALID_SCHOLAR_SORTS} 중 하나여야 합니다.",
-            "papers": [],
-        }
-
-    if year_from is not None and year_to is not None and year_from > year_to:
-        return {
-            "query": query,
-            "error": "year_from은 year_to보다 클 수 없습니다.",
-            "papers": [],
-        }
-
-    safe_limit = max(1, min(limit, MAX_RESULT_LIMIT))
+    safe_limit = _clamp_limit(limit)
     return _search_google_scholar(normalized_query, year_from, year_to, safe_limit, sort)
 
 
@@ -571,9 +590,9 @@ def search_google_scholar(
 @contextmanager
 def _db() -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
     try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
         yield conn
         conn.commit()
     except Exception:
@@ -581,6 +600,46 @@ def _db() -> Iterator[sqlite3.Connection]:
         raise
     finally:
         conn.close()
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, coltype: str) -> None:
+    """Add `column` to `table` if missing, tolerating a concurrent process doing the same.
+
+    `PRAGMA table_info` + `ALTER TABLE` is a check-then-act sequence: if two processes
+    (e.g. the MCP server and the web viewer, which both import this module) run it at
+    the same time against a pre-migration database, both may see the column missing
+    before either commits. SQLite serializes the ALTER TABLE itself, so the loser just
+    gets "duplicate column name" once the winner's change is visible — which means the
+    column now exists, exactly the state this function is trying to reach — so that
+    specific error is swallowed instead of crashing the process.
+    """
+    existing_columns = {
+        row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column in existing_columns:
+        return
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+    except sqlite3.OperationalError as error:
+        if "duplicate column name" not in str(error):
+            raise
+
+
+def _backfill_openalex_source(conn: sqlite3.Connection) -> None:
+    """Fill in `source` for rows saved before the `source` column existed.
+
+    Every paper saved before multi-source search was added could only have come
+    from `search_papers` (OpenAlex) — the only search tool that existed then —
+    so a `source IS NULL` row can be told apart from a genuinely unlabeled one by
+    checking whether its `openalex_id` actually looks like an OpenAlex work URL.
+    """
+    conn.execute(
+        """
+        UPDATE report_papers
+        SET source = 'openalex'
+        WHERE source IS NULL AND openalex_id LIKE 'https://openalex.org/%'
+        """
+    )
 
 
 def _init_db() -> None:
@@ -608,17 +667,14 @@ def _init_db() -> None:
                 authors TEXT,
                 doi TEXT,
                 landing_page_url TEXT,
-                cited_by_count INTEGER,
-                abstract TEXT
+                cited_by_count INTEGER
             )
             """
         )
 
-        existing_columns = {
-            row["name"] for row in conn.execute("PRAGMA table_info(report_papers)").fetchall()
-        }
-        if "source" not in existing_columns:
-            conn.execute("ALTER TABLE report_papers ADD COLUMN source TEXT")
+        _ensure_column(conn, "report_papers", "abstract", "TEXT")
+        _ensure_column(conn, "report_papers", "source", "TEXT")
+        _backfill_openalex_source(conn)
 
         conn.execute(
             """
@@ -646,12 +702,37 @@ def _get_monthly_usage(conn: sqlite3.Connection, source: str, period: str) -> in
     return row["count"] if row else 0
 
 
-def _increment_monthly_usage(conn: sqlite3.Connection, source: str, period: str) -> None:
-    conn.execute(
+def _try_reserve_monthly_usage(
+    conn: sqlite3.Connection, source: str, period: str, limit: int
+) -> int | None:
+    """Atomically increment the usage counter iff it is still under `limit`.
+
+    Combines the "is there room left" check and the increment into one SQL statement
+    (via `ON CONFLICT ... WHERE ... RETURNING`) so two concurrent calls can't both read
+    the same pre-increment count and both proceed, letting usage exceed `limit`.
+    Returns the new count on success, or None if the limit was already reached.
+    """
+    if limit <= 0:
+        # The `WHERE count < ?` guard only applies to the ON CONFLICT UPDATE branch;
+        # a period's very first reservation takes the plain INSERT branch instead,
+        # which has no limit check at all and would otherwise always succeed.
+        return None
+    row = conn.execute(
         """
         INSERT INTO api_usage (source, period, count) VALUES (?, ?, 1)
         ON CONFLICT(source, period) DO UPDATE SET count = count + 1
+        WHERE api_usage.count < ?
+        RETURNING count
         """,
+        (source, period, limit),
+    ).fetchone()
+    return row["count"] if row else None
+
+
+def _release_monthly_usage(conn: sqlite3.Connection, source: str, period: str) -> None:
+    """Give back one reserved slot (used when the reserved call ended up failing)."""
+    conn.execute(
+        "UPDATE api_usage SET count = MAX(count - 1, 0) WHERE source = ? AND period = ?",
         (source, period),
     )
 
@@ -686,7 +767,8 @@ def save_report(
         content: 근거와 출처가 포함된 리포트 본문(마크다운 텍스트).
         papers: 참조 논문 목록. 각 항목은 openalex_id, title, publication_year,
             authors, doi, landing_page_url, cited_by_count, abstract, source
-            (예: "openalex", "arxiv", "semantic_scholar") 필드를 담을 수 있다.
+            (예: "openalex", "arxiv", "semantic_scholar", "google_scholar") 필드를
+            담을 수 있다. source를 생략하면 "unknown"으로 저장된다.
     """
     normalized_title = title.strip()
     normalized_question = research_question.strip()
@@ -732,7 +814,12 @@ def save_report(
                         paper.get("landing_page_url"),
                         paper.get("cited_by_count"),
                         paper.get("abstract"),
-                        paper.get("source"),
+                        # Never store NULL here: a NULL source is indistinguishable
+                        # from "not migrated yet" (see _backfill_openalex_source),
+                        # so a caller that omits this field gets an explicit
+                        # "unknown" label instead of silently reopening that gap
+                        # for every future save.
+                        paper.get("source") or "unknown",
                     )
                     for paper in papers
                 ],
@@ -746,18 +833,21 @@ def save_report(
 @server.tool(structured_output=True)
 def list_reports() -> dict[str, Any]:
     """저장된 리포트 목록을 최신순으로 조회한다."""
-    with _db() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                r.id, r.title, r.research_question, r.created_at,
-                COUNT(p.id) AS paper_count
-            FROM reports r
-            LEFT JOIN report_papers p ON p.report_id = r.id
-            GROUP BY r.id
-            ORDER BY r.created_at DESC
-            """
-        ).fetchall()
+    try:
+        with _db() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    r.id, r.title, r.research_question, r.created_at,
+                    COUNT(p.id) AS paper_count
+                FROM reports r
+                LEFT JOIN report_papers p ON p.report_id = r.id
+                GROUP BY r.id
+                ORDER BY r.created_at DESC
+                """
+            ).fetchall()
+    except sqlite3.Error as error:
+        return {"error": f"리포트 목록을 조회하지 못했습니다: {error}"}
 
     return {
         "reports": [
@@ -781,30 +871,38 @@ def list_papers(report_id: int | None = None) -> dict[str, Any]:
         report_id: 지정하면 해당 리포트가 참조한 논문만 반환한다. 생략하면 저장된
             모든 참고 논문을 리포트 구분과 함께 반환한다.
     """
-    with _db() as conn:
-        if report_id is not None:
-            existing = conn.execute("SELECT id FROM reports WHERE id = ?", (report_id,)).fetchone()
-            if existing is None:
-                return {"error": f"report_id {report_id}에 해당하는 리포트를 찾을 수 없습니다."}
-            rows = conn.execute(
-                """
-                SELECT p.*, r.title AS report_title
-                FROM report_papers p
-                JOIN reports r ON r.id = p.report_id
-                WHERE p.report_id = ?
-                ORDER BY p.id
-                """,
-                (report_id,),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT p.*, r.title AS report_title
-                FROM report_papers p
-                JOIN reports r ON r.id = p.report_id
-                ORDER BY p.report_id, p.id
-                """
-            ).fetchall()
+    try:
+        with _db() as conn:
+            if report_id is not None:
+                existing = conn.execute(
+                    "SELECT id FROM reports WHERE id = ?", (report_id,)
+                ).fetchone()
+                if existing is None:
+                    return {
+                        "error": f"report_id {report_id}에 해당하는 리포트를 찾을 수 없습니다.",
+                        "error_code": "not_found",
+                    }
+                rows = conn.execute(
+                    """
+                    SELECT p.*, r.title AS report_title
+                    FROM report_papers p
+                    JOIN reports r ON r.id = p.report_id
+                    WHERE p.report_id = ?
+                    ORDER BY p.id
+                    """,
+                    (report_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT p.*, r.title AS report_title
+                    FROM report_papers p
+                    JOIN reports r ON r.id = p.report_id
+                    ORDER BY p.report_id, p.id
+                    """
+                ).fetchall()
+    except sqlite3.Error as error:
+        return {"error": f"논문 목록을 조회하지 못했습니다: {error}"}
 
     papers: list[dict[str, Any]] = []
     for row in rows:
@@ -824,14 +922,22 @@ def get_report(report_id: int) -> dict[str, Any]:
     Args:
         report_id: 불러올 리포트의 id.
     """
-    with _db() as conn:
-        report_row = conn.execute("SELECT * FROM reports WHERE id = ?", (report_id,)).fetchone()
-        if report_row is None:
-            return {"error": f"report_id {report_id}에 해당하는 리포트를 찾을 수 없습니다."}
+    try:
+        with _db() as conn:
+            report_row = conn.execute(
+                "SELECT * FROM reports WHERE id = ?", (report_id,)
+            ).fetchone()
+            if report_row is None:
+                return {
+                    "error": f"report_id {report_id}에 해당하는 리포트를 찾을 수 없습니다.",
+                    "error_code": "not_found",
+                }
 
-        paper_rows = conn.execute(
-            "SELECT * FROM report_papers WHERE report_id = ? ORDER BY id", (report_id,)
-        ).fetchall()
+            paper_rows = conn.execute(
+                "SELECT * FROM report_papers WHERE report_id = ? ORDER BY id", (report_id,)
+            ).fetchall()
+    except sqlite3.Error as error:
+        return {"error": f"리포트를 불러오지 못했습니다: {error}"}
 
     return {
         "id": report_row["id"],
@@ -851,11 +957,17 @@ def delete_report(report_id: int) -> dict[str, Any]:
     Args:
         report_id: 삭제할 리포트의 id.
     """
-    with _db() as conn:
-        existing = conn.execute("SELECT id FROM reports WHERE id = ?", (report_id,)).fetchone()
-        if existing is None:
-            return {"error": f"report_id {report_id}에 해당하는 리포트를 찾을 수 없습니다."}
-        conn.execute("DELETE FROM reports WHERE id = ?", (report_id,))
+    try:
+        with _db() as conn:
+            existing = conn.execute("SELECT id FROM reports WHERE id = ?", (report_id,)).fetchone()
+            if existing is None:
+                return {
+                    "error": f"report_id {report_id}에 해당하는 리포트를 찾을 수 없습니다.",
+                    "error_code": "not_found",
+                }
+            conn.execute("DELETE FROM reports WHERE id = ?", (report_id,))
+    except sqlite3.Error as error:
+        return {"error": f"리포트를 삭제하지 못했습니다: {error}"}
 
     return {"success": True, "report_id": report_id}
 

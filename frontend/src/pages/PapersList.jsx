@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchPapers } from "../api";
 import { Loading, ErrorMessage } from "../components/State";
 import SourceBadge from "../components/SourceBadge";
+import PaperReferenceLinks from "../components/PaperReferenceLinks";
 
 export default function PapersList() {
   const [papers, setPapers] = useState(null);
@@ -26,11 +27,7 @@ export default function PapersList() {
             {paper.authors?.join(", ")} · {paper.publication_year} · 인용 {paper.cited_by_count ?? "-"}
           </p>
           <p className="muted">출처 리포트: {paper.report_title}</p>
-          {paper.landing_page_url && (
-            <a className="pill" href={paper.landing_page_url} target="_blank" rel="noreferrer">
-              원문 보기 ↗
-            </a>
-          )}
+          <PaperReferenceLinks doi={paper.doi} landingPageUrl={paper.landing_page_url} />
         </li>
       ))}
     </ul>

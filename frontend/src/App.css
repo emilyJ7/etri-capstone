@@ -155,6 +155,12 @@
   color: var(--accent);
 }
 
+.badge-unknown {
+  background: transparent;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+}
+
 .muted {
   color: var(--muted);
   margin: 0.25rem 0;
@@ -193,6 +199,7 @@
   align-items: center;
   gap: 0.3rem;
   margin-top: 0.5rem;
+  margin-right: 0.5rem;
   padding: 0.3rem 0.75rem;
   border-radius: 999px;
   background: var(--accent-soft);

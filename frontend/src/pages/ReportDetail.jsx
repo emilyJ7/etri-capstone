@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import { fetchReport } from "../api";
 import { Loading, ErrorMessage } from "../components/State";
 import SourceBadge from "../components/SourceBadge";
+import PaperReferenceLinks from "../components/PaperReferenceLinks";
 
 export default function ReportDetail() {
   const { reportId } = useParams();
@@ -36,18 +37,14 @@ export default function ReportDetail() {
       <h3>참조 논문 ({report.papers.length}편)</h3>
       <ul className="card-list">
         {report.papers.map((paper, i) => (
-          <li key={paper.openalex_id} className="card" style={{ "--i": i }}>
+          <li key={paper.openalex_id ?? `paper-${i}`} className="card" style={{ "--i": i }}>
             <h4>
               {paper.title} <SourceBadge source={paper.source} />
             </h4>
             <p className="meta">
               {paper.authors?.join(", ")} · {paper.publication_year} · 인용 {paper.cited_by_count ?? "-"}
             </p>
-            {paper.landing_page_url && (
-              <a className="pill" href={paper.landing_page_url} target="_blank" rel="noreferrer">
-                원문 보기 ↗
-              </a>
-            )}
+            <PaperReferenceLinks doi={paper.doi} landingPageUrl={paper.landing_page_url} />
           </li>
         ))}
       </ul>
