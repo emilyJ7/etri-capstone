@@ -113,6 +113,30 @@ OpenAlex API 키가 있다면 실행 환경의 `OPENALEX_API_KEY` 값으로 전�
 리포트와 참조 논문은 저장소 루트의 `reports.db`(SQLite)에 보존되며, 서버를 재시작해도 유지된다.
 이 파일은 `.gitignore`에 의해 커밋되지 않는다.
 
+## 웹 뷰어 (읽기 전용)
+
+저장된 리포트와 참고 논문을 브라우저에서 확인할 수 있는 읽기 전용 뷰어를 `web_api.py`(FastAPI)와
+`frontend/`(React + Vite)에 구현해 두었다. 채팅이나 분석 기능은 없고, `reports.db`에 이미 저장된
+내용을 보여주기만 한다 — 따라서 Claude API 등 별도 LLM 비용은 들지 않는다.
+
+API 서버 실행:
+
+```bash
+python -m pip install -r requirements.txt
+uvicorn web_api:app --port 8000
+```
+
+프론트엔드 실행 (Node.js 필요):
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+`npm run dev`가 알려주는 주소(기본 http://localhost:5173)로 접속하면 리포트 목록/상세, 논문 목록을
+볼 수 있다. API 서버(`:8000`)가 먼저 떠 있어야 한다.
+
 ## 프로젝트 스킬
 
 저장소를 내려받아 프로젝트 루트에서 LLM 애플리케이션을 실행하면 `.claude/skills`의 스킬을 사용할 수 있다.
