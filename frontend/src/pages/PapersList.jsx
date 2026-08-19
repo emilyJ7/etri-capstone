@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchPapers } from "../api";
 import { Loading, ErrorMessage } from "../components/State";
+import SourceBadge from "../components/SourceBadge";
 
 export default function PapersList() {
   const [papers, setPapers] = useState(null);
@@ -18,7 +19,9 @@ export default function PapersList() {
     <ul className="card-list">
       {papers.map((paper, i) => (
         <li key={paper.id} className="card" style={{ "--i": i }}>
-          <h4>{paper.title}</h4>
+          <h4>
+            {paper.title} <SourceBadge source={paper.source} />
+          </h4>
           <p className="meta">
             {paper.authors?.join(", ")} · {paper.publication_year} · 인용 {paper.cited_by_count ?? "-"}
           </p>

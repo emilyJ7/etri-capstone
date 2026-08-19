@@ -143,6 +143,18 @@
   color: var(--text);
 }
 
+.badge {
+  display: inline-block;
+  vertical-align: middle;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .muted {
   color: var(--muted);
   margin: 0.25rem 0;

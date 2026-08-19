@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
+import time
+import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -18,9 +21,18 @@ from mcp.server import MCPServer
 load_dotenv()
 
 OPENALEX_WORKS_URL = "https://api.openalex.org/works"
+ARXIV_API_URL = "http://export.arxiv.org/api/query"
+ARXIV_ATOM_NS = "{http://www.w3.org/2005/Atom}"
+SEMANTIC_SCHOLAR_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
+SERPAPI_SEARCH_URL = "https://serpapi.com/search"
+GOOGLE_SCHOLAR_SOURCE_KEY = "google_scholar"
+GOOGLE_SCHOLAR_MONTHLY_LIMIT = int(os.getenv("SERPAPI_MONTHLY_LIMIT", "250"))
+YEAR_PATTERN = re.compile(r"(19|20)\d{2}")
 DEFAULT_RESULT_LIMIT = 5
 MAX_RESULT_LIMIT = 10
 VALID_SORTS = ("relevance", "citations")
+VALID_ARXIV_SORTS = ("relevance", "date")
+VALID_SCHOLAR_SORTS = ("relevance", "date")
 
 DB_PATH = Path(__file__).resolve().parent / "reports.db"
 
@@ -135,6 +147,7 @@ def _search_openalex(
                 "landing_page_url": primary_location.get("landing_page_url"),
                 "cited_by_count": work.get("cited_by_count"),
                 "abstract": _reconstruct_abstract(work.get("abstract_inverted_index")),
+                "source": "openalex",
             }
         )
 
@@ -184,6 +197,370 @@ def search_papers(
 
     safe_limit = max(1, min(limit, MAX_RESULT_LIMIT))
     return _search_openalex(normalized_query, year_from, year_to, concept, safe_limit, sort)
+
+
+def _parse_arxiv_entry(entry: ET.Element) -> dict[str, Any]:
+    def text(tag: str) -> str | None:
+        el = entry.find(f"{ARXIV_ATOM_NS}{tag}")
+        if el is None or not el.text:
+            return None
+        return " ".join(el.text.split())
+
+    arxiv_id = text("id")
+    published = text("published")
+    year = int(published[:4]) if published else None
+
+    authors: list[str] = []
+    for author in entry.findall(f"{ARXIV_ATOM_NS}author"):
+        name_el = author.find(f"{ARXIV_ATOM_NS}name")
+        if name_el is not None and name_el.text:
+            authors.append(name_el.text.strip())
+
+    landing_page_url = arxiv_id
+    for link in entry.findall(f"{ARXIV_ATOM_NS}link"):
+        if link.get("rel") == "alternate":
+            landing_page_url = link.get("href") or landing_page_url
+
+    return {
+        "openalex_id": arxiv_id,
+        "title": text("title"),
+        "publication_year": year,
+        "authors": authors,
+        "doi": None,
+        "landing_page_url": landing_page_url,
+        "cited_by_count": None,
+        "abstract": text("summary"),
+        "source": "arxiv",
+    }
+
+
+def _search_arxiv(query: str, limit: int, sort: str, category: str | None) -> dict[str, Any]:
+    search_terms = f"all:{query}"
+    if category:
+        search_terms = f"cat:{category} AND {search_terms}"
+
+    params = {
+        "search_query": search_terms,
+        "start": 0,
+        "max_results": limit,
+        "sortBy": "relevance" if sort == "relevance" else "submittedDate",
+        "sortOrder": "descending",
+    }
+    request = Request(
+        f"{ARXIV_API_URL}?{urlencode(params)}",
+        headers={"User-Agent": "etri-capstone/1.0"},
+    )
+
+    try:
+        with urlopen(request, timeout=20) as response:
+            payload = response.read()
+    except HTTPError as error:
+        return {"query": query, "error": f"arXiv가 HTTP {error.code} 응답을 반환했습니다.", "papers": []}
+    except URLError as error:
+        return {"query": query, "error": f"arXiv에 연결하지 못했습니다: {error.reason}", "papers": []}
+
+    try:
+        root = ET.fromstring(payload)
+    except ET.ParseError as error:
+        return {"query": query, "error": f"arXiv 응답을 해석하지 못했습니다: {error}", "papers": []}
+
+    papers = [_parse_arxiv_entry(entry) for entry in root.findall(f"{ARXIV_ATOM_NS}entry")]
+
+    return {"query": query, "count": len(papers), "papers": papers}
+
+
+@server.tool(structured_output=True)
+def search_arxiv(
+    query: str,
+    limit: int = DEFAULT_RESULT_LIMIT,
+    sort: str = "relevance",
+    category: str | None = None,
+) -> dict[str, Any]:
+    """arXiv에서 프리프린트 논문을 검색한다. 결과에 항상 초록을 포함한다.
+
+    Args:
+        query: 검색할 키워드 또는 주제어.
+        limit: 반환할 논문 수. 기본값 5, 최대 10.
+        sort: "relevance"(기본, 관련도순) 또는 "date"(최신 제출일순).
+        category: arXiv 분류 코드로 제한(예: "cs.CL", "cs.AI"). 지정하지 않으면 전체 분류에서 검색.
+    """
+    normalized_query = query.strip()
+    if not normalized_query:
+        return {"query": query, "error": "검색할 키워드를 입력해 주세요.", "papers": []}
+
+    if sort not in VALID_ARXIV_SORTS:
+        return {
+            "query": query,
+            "error": f"sort는 {VALID_ARXIV_SORTS} 중 하나여야 합니다.",
+            "papers": [],
+        }
+
+    safe_limit = max(1, min(limit, MAX_RESULT_LIMIT))
+    return _search_arxiv(normalized_query, safe_limit, sort, category)
+
+
+def _fetch_json_with_backoff(
+    request: Request, max_retries: int = 3, base_delay: float = 1.0
+) -> tuple[dict[str, Any] | None, str | None]:
+    """GET a JSON response, retrying with exponential backoff on HTTP 429.
+
+    Honors a numeric `Retry-After` header when present. Returns (payload, None) on
+    success, or (None, error_message) once retries are exhausted or a non-429 error
+    occurs.
+    """
+    delay = base_delay
+    for attempt in range(max_retries + 1):
+        try:
+            with urlopen(request, timeout=20) as response:
+                return json.load(response), None
+        except HTTPError as error:
+            if error.code == 429 and attempt < max_retries:
+                retry_after = error.headers.get("Retry-After") if error.headers else None
+                wait_seconds = float(retry_after) if retry_after and retry_after.isdigit() else delay
+                time.sleep(wait_seconds)
+                delay *= 2
+                continue
+            return None, f"HTTP {error.code} 응답을 반환했습니다."
+        except URLError as error:
+            return None, f"연결하지 못했습니다: {error.reason}"
+    return None, "재시도 한도를 초과했습니다(HTTP 429)."
+
+
+def _search_semantic_scholar(
+    query: str,
+    year_from: int | None,
+    year_to: int | None,
+    limit: int,
+    sort: str,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {
+        "query": query,
+        "limit": limit,
+        "fields": "title,year,authors,abstract,externalIds,citationCount,url",
+    }
+    if year_from is not None and year_to is not None:
+        params["year"] = f"{year_from}-{year_to}"
+    elif year_from is not None:
+        params["year"] = f"{year_from}-"
+    elif year_to is not None:
+        params["year"] = f"-{year_to}"
+
+    headers = {"User-Agent": "etri-capstone/1.0"}
+    api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
+    if api_key:
+        headers["x-api-key"] = api_key
+
+    request = Request(f"{SEMANTIC_SCHOLAR_SEARCH_URL}?{urlencode(params)}", headers=headers)
+
+    payload, error_message = _fetch_json_with_backoff(request)
+    if error_message:
+        return {
+            "query": query,
+            "error": f"Semantic Scholar가 {error_message}",
+            "papers": [],
+        }
+
+    papers: list[dict[str, Any]] = []
+    for item in payload.get("data", []):
+        external_ids = item.get("externalIds") or {}
+        papers.append(
+            {
+                "openalex_id": item.get("paperId"),
+                "title": item.get("title"),
+                "publication_year": item.get("year"),
+                "authors": [a.get("name") for a in (item.get("authors") or []) if a.get("name")],
+                "doi": external_ids.get("DOI"),
+                "landing_page_url": item.get("url"),
+                "cited_by_count": item.get("citationCount"),
+                "abstract": item.get("abstract"),
+                "source": "semantic_scholar",
+            }
+        )
+
+    if sort == "citations":
+        papers.sort(key=lambda paper: paper["cited_by_count"] or 0, reverse=True)
+
+    return {"query": query, "count": len(papers), "papers": papers}
+
+
+@server.tool(structured_output=True)
+def search_semantic_scholar(
+    query: str,
+    year_from: int | None = None,
+    year_to: int | None = None,
+    limit: int = DEFAULT_RESULT_LIMIT,
+    sort: str = "relevance",
+) -> dict[str, Any]:
+    """Semantic Scholar에서 논문을 검색한다. 초록과 인용수를 함께 제공한다.
+
+    비인증 요청은 공용 레이트리밋(HTTP 429)에 걸리기 쉬워서, 429 응답을 받으면 지수 백오프로
+    최대 3회 재시도한다(`Retry-After` 헤더가 있으면 그 값을 우선 사용).
+
+    Args:
+        query: 검색할 키워드 또는 주제어.
+        year_from: 발행 연도 하한(포함). 지정하지 않으면 제한 없음.
+        year_to: 발행 연도 상한(포함). 지정하지 않으면 제한 없음.
+        limit: 반환할 논문 수. 기본값 5, 최대 10.
+        sort: "relevance"(기본) 또는 "citations"(피인용수순).
+    """
+    normalized_query = query.strip()
+    if not normalized_query:
+        return {"query": query, "error": "검색할 키워드를 입력해 주세요.", "papers": []}
+
+    if sort not in VALID_SORTS:
+        return {
+            "query": query,
+            "error": f"sort는 {VALID_SORTS} 중 하나여야 합니다.",
+            "papers": [],
+        }
+
+    if year_from is not None and year_to is not None and year_from > year_to:
+        return {
+            "query": query,
+            "error": "year_from은 year_to보다 클 수 없습니다.",
+            "papers": [],
+        }
+
+    safe_limit = max(1, min(limit, MAX_RESULT_LIMIT))
+    return _search_semantic_scholar(normalized_query, year_from, year_to, safe_limit, sort)
+
+
+def _parse_scholar_result(item: dict[str, Any]) -> dict[str, Any]:
+    publication_info = item.get("publication_info") or {}
+    summary = publication_info.get("summary") or ""
+    year_match = YEAR_PATTERN.search(summary)
+    year = int(year_match.group()) if year_match else None
+
+    authors = [
+        author.get("name")
+        for author in (publication_info.get("authors") or [])
+        if author.get("name")
+    ]
+
+    cited_by = ((item.get("inline_links") or {}).get("cited_by") or {}).get("total")
+
+    return {
+        "openalex_id": item.get("result_id"),
+        "title": item.get("title"),
+        "publication_year": year,
+        "authors": authors,
+        "doi": None,
+        "landing_page_url": item.get("link"),
+        "cited_by_count": cited_by,
+        "abstract": item.get("snippet"),
+        "source": "google_scholar",
+    }
+
+
+def _search_google_scholar(
+    query: str,
+    year_from: int | None,
+    year_to: int | None,
+    limit: int,
+    sort: str,
+) -> dict[str, Any]:
+    api_key = os.getenv("SERPAPI_API_KEY")
+    if not api_key:
+        return {
+            "query": query,
+            "error": "SERPAPI_API_KEY가 설정되지 않았습니다. serpapi.com에서 키를 발급받아 .env에 추가해 주세요.",
+            "papers": [],
+        }
+
+    period = _current_period()
+    with _db() as conn:
+        used = _get_monthly_usage(conn, GOOGLE_SCHOLAR_SOURCE_KEY, period)
+        if used >= GOOGLE_SCHOLAR_MONTHLY_LIMIT:
+            return {
+                "query": query,
+                "error": (
+                    f"이번 달({period}) Google Scholar 검색 한도({GOOGLE_SCHOLAR_MONTHLY_LIMIT}회)를 "
+                    f"모두 사용했습니다({used}회 사용). 다음 달까지 기다리거나 SerpApi 유료 플랜으로 "
+                    "업그레이드해 주세요."
+                ),
+                "papers": [],
+            }
+        _increment_monthly_usage(conn, GOOGLE_SCHOLAR_SOURCE_KEY, period)
+
+    params: dict[str, Any] = {
+        "engine": "google_scholar",
+        "q": query,
+        "num": limit,
+        "hl": "en",
+        "api_key": api_key,
+    }
+    if year_from is not None:
+        params["as_ylo"] = year_from
+    if year_to is not None:
+        params["as_yhi"] = year_to
+    if sort == "date":
+        params["scisbd"] = 1
+
+    request = Request(
+        f"{SERPAPI_SEARCH_URL}?{urlencode(params)}",
+        headers={"User-Agent": "etri-capstone/1.0"},
+    )
+
+    try:
+        with urlopen(request, timeout=20) as response:
+            payload = json.load(response)
+    except HTTPError as error:
+        return {"query": query, "error": f"SerpApi가 HTTP {error.code} 응답을 반환했습니다.", "papers": []}
+    except URLError as error:
+        return {"query": query, "error": f"SerpApi에 연결하지 못했습니다: {error.reason}", "papers": []}
+
+    if payload.get("error"):
+        return {"query": query, "error": f"SerpApi 오류: {payload['error']}", "papers": []}
+
+    papers = [_parse_scholar_result(item) for item in payload.get("organic_results", [])]
+
+    return {"query": query, "count": len(papers), "papers": papers}
+
+
+@server.tool(structured_output=True)
+def search_google_scholar(
+    query: str,
+    year_from: int | None = None,
+    year_to: int | None = None,
+    limit: int = DEFAULT_RESULT_LIMIT,
+    sort: str = "relevance",
+) -> dict[str, Any]:
+    """SerpApi를 통해 Google Scholar에서 논문을 검색한다.
+
+    Google의 공식 API가 아니라 유료 서드파티 서비스 SerpApi를 거친다. 환경변수
+    SERPAPI_API_KEY(.env)가 있어야 동작한다. abstract 필드는 전체 초록이 아니라 검색 결과
+    스니펫(2~3줄)이다 — Google Scholar 검색 결과 자체가 전체 초록을 제공하지 않기 때문이다.
+
+    무료 요금제 한도를 넘기지 않도록, 이번 달 호출 횟수를 SQLite에 기록해 두고 월
+    SERPAPI_MONTHLY_LIMIT(기본 250)회를 넘으면 SerpApi를 호출하지 않고 바로 에러를 반환한다.
+
+    Args:
+        query: 검색할 키워드 또는 주제어.
+        year_from: 발행 연도 하한(포함). 지정하지 않으면 제한 없음.
+        year_to: 발행 연도 상한(포함). 지정하지 않으면 제한 없음.
+        limit: 반환할 논문 수. 기본값 5, 최대 10.
+        sort: "relevance"(기본) 또는 "date"(최신순).
+    """
+    normalized_query = query.strip()
+    if not normalized_query:
+        return {"query": query, "error": "검색할 키워드를 입력해 주세요.", "papers": []}
+
+    if sort not in VALID_SCHOLAR_SORTS:
+        return {
+            "query": query,
+            "error": f"sort는 {VALID_SCHOLAR_SORTS} 중 하나여야 합니다.",
+            "papers": [],
+        }
+
+    if year_from is not None and year_to is not None and year_from > year_to:
+        return {
+            "query": query,
+            "error": "year_from은 year_to보다 클 수 없습니다.",
+            "papers": [],
+        }
+
+    safe_limit = max(1, min(limit, MAX_RESULT_LIMIT))
+    return _search_google_scholar(normalized_query, year_from, year_to, safe_limit, sort)
 
 
 # ---------------------------------------------------------------------------
@@ -237,8 +614,46 @@ def _init_db() -> None:
             """
         )
 
+        existing_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(report_papers)").fetchall()
+        }
+        if "source" not in existing_columns:
+            conn.execute("ALTER TABLE report_papers ADD COLUMN source TEXT")
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS api_usage (
+                source TEXT NOT NULL,
+                period TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (source, period)
+            )
+            """
+        )
+
 
 _init_db()
+
+
+def _current_period() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+def _get_monthly_usage(conn: sqlite3.Connection, source: str, period: str) -> int:
+    row = conn.execute(
+        "SELECT count FROM api_usage WHERE source = ? AND period = ?", (source, period)
+    ).fetchone()
+    return row["count"] if row else 0
+
+
+def _increment_monthly_usage(conn: sqlite3.Connection, source: str, period: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO api_usage (source, period, count) VALUES (?, ?, 1)
+        ON CONFLICT(source, period) DO UPDATE SET count = count + 1
+        """,
+        (source, period),
+    )
 
 
 def _row_to_paper(row: sqlite3.Row) -> dict[str, Any]:
@@ -252,6 +667,7 @@ def _row_to_paper(row: sqlite3.Row) -> dict[str, Any]:
         "landing_page_url": row["landing_page_url"],
         "cited_by_count": row["cited_by_count"],
         "abstract": row["abstract"],
+        "source": row["source"],
     }
 
 
@@ -269,7 +685,8 @@ def save_report(
         research_question: 이 리포트가 답하는 연구 질문.
         content: 근거와 출처가 포함된 리포트 본문(마크다운 텍스트).
         papers: 참조 논문 목록. 각 항목은 openalex_id, title, publication_year,
-            authors, doi, landing_page_url, cited_by_count, abstract 필드를 담을 수 있다.
+            authors, doi, landing_page_url, cited_by_count, abstract, source
+            (예: "openalex", "arxiv", "semantic_scholar") 필드를 담을 수 있다.
     """
     normalized_title = title.strip()
     normalized_question = research_question.strip()
@@ -300,9 +717,9 @@ def save_report(
                 """
                 INSERT INTO report_papers (
                     report_id, openalex_id, title, publication_year, authors, doi,
-                    landing_page_url, cited_by_count, abstract
+                    landing_page_url, cited_by_count, abstract, source
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -315,6 +732,7 @@ def save_report(
                         paper.get("landing_page_url"),
                         paper.get("cited_by_count"),
                         paper.get("abstract"),
+                        paper.get("source"),
                     )
                     for paper in papers
                 ],

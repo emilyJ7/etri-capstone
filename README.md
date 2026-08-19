@@ -61,16 +61,22 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-## OpenAlex API 키 (선택)
+## API 키 (선택)
 
-기본적인 검색은 API 키 없이도 동작하지만, 요청량이 많거나 크레딧 제한에 걸리면 키가 필요할 수 있다.
-저장소 루트에 `.env` 파일을 만들고 아래처럼 채우면 `server.py`가 시작 시 자동으로 읽는다.
+기본적인 검색은 API 키 없이도 동작하지만, 요청량이 많거나 크레딧/레이트리밋에 걸리면 키가 필요할 수
+있다. 저장소 루트에 `.env` 파일을 만들고 아래처럼 채우면 `server.py`가 시작 시 자동으로 읽는다.
 
 ```text
 OPENALEX_API_KEY=여기에_키_입력
+SEMANTIC_SCHOLAR_API_KEY=여기에_키_입력
+SERPAPI_API_KEY=여기에_키_입력
 ```
 
-`.env`는 `.gitignore`에 등록되어 있어 커밋되지 않는다.
+arXiv는 API 키가 필요 없다. `SERPAPI_API_KEY`는 `search_google_scholar`에 **필수**다(키가 없으면
+에러를 반환한다) — [serpapi.com](https://serpapi.com)에서 가입 후 발급받는다(무료 플랜: 월 250회).
+무료 플랜을 실수로 넘겨 과금되지 않도록, 서버가 이번 달 호출 횟수를 자체 기록해 250회(기본값)에
+도달하면 SerpApi를 호출하지 않고 차단한다. 유료 플랜으로 올렸다면 `.env`에 `SERPAPI_MONTHLY_LIMIT`를
+원하는 값으로 설정해 한도를 조정할 수 있다. `.env`는 `.gitignore`에 등록되어 있어 커밋되지 않는다.
 
 ## MCP Server 실행
 
@@ -90,6 +96,9 @@ MCP Host는 위 명령으로 Server를 실행하고 표준 입력과 표준 출�
 
 ```text
 search_papers
+search_arxiv
+search_semantic_scholar
+search_google_scholar
 save_report
 list_reports
 list_papers
@@ -99,14 +108,22 @@ delete_report
 
 - `search_papers`: 키워드/주제로 OpenAlex를 검색한다. 발행 연도 범위, concept(분야) 필터, 정렬
   (관련도순/피인용수순)을 지원하며, 결과에 초록(abstract, 확보 가능한 경우)을 포함한다.
+- `search_arxiv`: arXiv에서 프리프린트를 검색한다. 분류 코드(`category`, 예: `cs.CL`) 필터를
+  지원하고, 결과에 항상 초록을 포함한다.
+- `search_semantic_scholar`: Semantic Scholar에서 논문을 검색한다. 발행 연도 범위를 지원하고,
+  초록과 인용수를 함께 제공한다.
+- `search_google_scholar`: SerpApi(유료 서드파티 서비스)를 통해 Google Scholar를 검색한다.
+  `SERPAPI_API_KEY`가 필수이며, `abstract` 필드는 전체 초록이 아니라 검색 결과 스니펫이다.
 - `save_report`: 리포트 본문(제목, 연구 질문, 근거·출처가 담긴 내용)과 참조 논문 목록을 함께 저장한다.
+  참조 논문은 검색 Tool 4개 중 어디서 가져온 것이든 그대로 저장할 수 있다(`source` 필드로 출처 구분).
 - `list_reports`: 저장된 리포트 목록을 최신순으로 조회한다.
 - `list_papers`: 리포트 전체를 불러오지 않고 저장된 참고 논문만 조회한다(`report_id`로 특정 리포트만
   필터링 가능).
 - `get_report`: 저장된 리포트 하나를 참조 논문 목록과 함께 불러온다.
 - `delete_report`: 저장된 리포트를 삭제한다(참조 논문 정보도 함께 삭제된다).
 
-OpenAlex API 키가 있다면 실행 환경의 `OPENALEX_API_KEY` 값으로 전달할 수 있다. 기본적인 검색은 API 키 없이도 실행할 수 있다.
+Google Scholar는 공식 API가 없고 직접 스크래핑은 이용약관 위반이자 불안정하다. 대신 SerpApi(유료
+서드파티 스크래핑 서비스)를 경유하는 `search_google_scholar`로 지원한다.
 
 ## 데이터 저장
 

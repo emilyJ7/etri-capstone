@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { fetchReport } from "../api";
 import { Loading, ErrorMessage } from "../components/State";
+import SourceBadge from "../components/SourceBadge";
 
 export default function ReportDetail() {
   const { reportId } = useParams();
@@ -36,7 +37,9 @@ export default function ReportDetail() {
       <ul className="card-list">
         {report.papers.map((paper, i) => (
           <li key={paper.openalex_id} className="card" style={{ "--i": i }}>
-            <h4>{paper.title}</h4>
+            <h4>
+              {paper.title} <SourceBadge source={paper.source} />
+            </h4>
             <p className="meta">
               {paper.authors?.join(", ")} · {paper.publication_year} · 인용 {paper.cited_by_count ?? "-"}
             </p>
